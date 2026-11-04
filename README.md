@@ -1,6 +1,6 @@
 # 🃏 PokéCards
 
-Mini aplicación web para **crear y visualizar cartas coleccionables** estilo Pokémon. Sin frameworks, sin dependencias y sin build: solo abre `index.html`.
+Mini aplicación web para **crear y visualizar cartas coleccionables** estilo Pokémon. Sin frameworks, sin dependencias y sin build. Los datos base viven en dos archivos JSON.
 
 ![HTML](https://img.shields.io/badge/HTML-5-e34f26?logo=html5&logoColor=white)
 ![CSS](https://img.shields.io/badge/CSS-3-1572b6?logo=css3&logoColor=white)
@@ -13,35 +13,41 @@ Mini aplicación web para **crear y visualizar cartas coleccionables** estilo Po
 - **Arte personalizado**: usa un emoji o sube una imagen desde tu equipo (se optimiza automáticamente) o pega una URL.
 - **Filtros por tipo** y **búsqueda** por nombre o descripción.
 - **Vista de detalle** al hacer clic en una carta y opción de eliminarla.
-- **Persistencia local**: tus cartas se guardan en `localStorage`, no hace falta servidor ni cuenta.
-- Incluye 6 cartas de ejemplo para empezar.
+- **Persistencia local**: los datos base se leen de `data/cartas.json` y `data/configuracion.json`; las cartas creadas o eliminadas se guardan en `localStorage`.
+- Incluye 6 cartas de ejemplo definidas en `data/cartas.json`.
 
 ## 🚀 Cómo usar
 
 1. Descarga o clona el repositorio.
-2. Abre `index.html` en tu navegador (doble clic).
-3. Pulsa **Nueva carta**, completa los datos y guarda.
+2. Sirve el proyecto con un servidor estático (necesario para leer los JSON):
 
-> También puedes servirlo con cualquier servidor estático:
->
-> ```bash
-> npx serve .
-> # o
-> python -m http.server 8080
-> ```
+   ```bash
+   npx serve .
+   # o
+   python -m http.server 8080
+   ```
+
+3. Abre en el navegador la URL que indique el servidor.
+4. Pulsa **Nueva carta**, completa los datos y guarda.
+
+> Si abres `index.html` con doble clic (`file://`), el navegador bloquea la lectura de los JSON y la app mostrará un aviso.
 
 ## 📁 Estructura
 
 ```
 .
-├── index.html   # Estructura y modales
-├── styles.css   # Estilos, cartas, holografía y responsive
-├── app.js       # Lógica, render, filtros y persistencia
+├── index.html            # Estructura y modales
+├── styles.css            # Estilos, cartas, holografía y responsive
+├── app.js                # Lógica, render, filtros y persistencia
+├── data/
+│   ├── cartas.json       # Cartas base de la colección
+│   └── configuracion.json # Tipos, debilidades, rarezas y almacenamiento
 └── README.md
 ```
 
 ## 🧠 Notas
 
 - Las imágenes subidas se redimensionan a un máximo de 640 px para no llenar el almacenamiento del navegador.
-- Las cartas viven en el navegador donde las creaste; si borras los datos del sitio, se pierden.
+- Las cartas de `data/cartas.json` son de solo lectura: si eliminas una, se recuerda en `localStorage` y no vuelve a aparecer.
+- Las cartas creadas viven en el navegador donde las creaste; si borras los datos del sitio, se pierden.
 - Tipos disponibles: Fuego, Agua, Planta, Eléctrico, Psíquico, Oscuro, Hada y Normal.
