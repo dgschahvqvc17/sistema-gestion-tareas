@@ -1,4 +1,4 @@
-# 🃏 PokéCards
+Diego gay# 🃏 PokéCards
 
 Mini aplicación web para **crear y visualizar cartas coleccionables** estilo Pokémon. HTML, CSS y JavaScript, sin build. Los datos base viven en dos archivos JSON.
 
