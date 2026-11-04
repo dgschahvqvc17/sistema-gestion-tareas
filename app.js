@@ -1,93 +1,37 @@
 /* ============================================================
    PokéCards · mini colección de cartas
-   Sin dependencias: todo se guarda en localStorage.
+   Datos base: data/cartas.json + data/configuracion.json.
+   Lo que creas o eliminas se guarda en localStorage.
    ============================================================ */
 
-const STORAGE_KEY = "pokecards.v1";
-const MAX_IMAGE_SIZE = 640;
-
-const TYPES = {
-  fuego:     { label: "Fuego",     emoji: "🔥", color: "#e8552f", soft: "#ffb27a" },
-  agua:      { label: "Agua",      emoji: "💧", color: "#2f7de8", soft: "#8fd0ff" },
-  planta:    { label: "Planta",    emoji: "🌿", color: "#3fa34d", soft: "#a8e6a1" },
-  electrico: { label: "Eléctrico", emoji: "⚡", color: "#c79a00", soft: "#ffe680" },
-  psiquico:  { label: "Psíquico",  emoji: "🔮", color: "#a44bd6", soft: "#e0b0ff" },
-  oscuro:    { label: "Oscuro",    emoji: "🌙", color: "#4a4f63", soft: "#9aa0b8" },
-  hada:      { label: "Hada",      emoji: "✨", color: "#e0568c", soft: "#ffb6d5" },
-  normal:    { label: "Normal",    emoji: "⭐", color: "#8b93a7", soft: "#d3d8e6" },
+const DATA_URLS = {
+  cards: "data/cartas.json",
+  config: "data/configuracion.json",
 };
 
-// Tipo al que es débil cada tipo
-const WEAKNESS = {
-  fuego: "agua", agua: "planta", planta: "fuego", electrico: "normal",
-  psiquico: "oscuro", oscuro: "hada", hada: "oscuro", normal: "electrico",
+const DEFAULT_STORAGE_KEYS = {
+  userCards: "pokecards.user.v1",
+  removedCards: "pokecards.removed.v1",
+  legacy: "pokecards.v1",
 };
 
-const RARITY_HOLO = new Set(["Épica", "Legendaria"]);
-const RARITY_CLASS = {
-  "Común": "rare-common",
-  "Rara": "rare-rare",
-  "Épica": "rare-epic",
-  "Legendaria": "rare-legendary",
-};
-
-const SEED_CARDS = [
-  {
-    id: "seed-1", name: "Chispín", type: "fuego", hp: 70, rarity: "Rara", emoji: "🦊",
-    desc: "Su cola chisporrotea cuando está contento. Le encanta dormir al sol.",
-    attacks: [
-      { name: "Ascua", damage: 20, cost: 1 },
-      { name: "Llamarada", damage: 70, cost: 3 },
-    ],
-  },
-  {
-    id: "seed-2", name: "Aquín", type: "agua", hp: 80, rarity: "Común", emoji: "🐳",
-    desc: "Nada en círculos para crear remolinos y jugar con las olas.",
-    attacks: [
-      { name: "Burbuja", damage: 20, cost: 1 },
-      { name: "Marea", damage: 60, cost: 2 },
-    ],
-  },
-  {
-    id: "seed-3", name: "Brotito", type: "planta", hp: 60, rarity: "Rara", emoji: "🌱",
-    desc: "La hoja de su cabeza crece un poco cada vez que recibe cariño.",
-    attacks: [
-      { name: "Hoja afilada", damage: 30, cost: 2 },
-      { name: "Latigazo", damage: 50, cost: 2 },
-    ],
-  },
-  {
-    id: "seed-4", name: "Voltito", type: "electrico", hp: 60, rarity: "Épica", emoji: "🐭",
-    desc: "Acumula electricidad en las mejillas. Un abrazo suyo puede dejarte peinado.",
-    attacks: [
-      { name: "Chispazo", damage: 30, cost: 1 },
-      { name: "Trueno", damage: 90, cost: 3 },
-    ],
-  },
-  {
-    id: "seed-5", name: "Lunaris", type: "psiquico", hp: 90, rarity: "Legendaria", emoji: "🌙",
-    desc: "Se dice que puede leer los sueños de quien la observa demasiado tiempo.",
-    attacks: [
-      { name: "Confusión", damage: 40, cost: 2 },
-      { name: "Poder psíquico", damage: 100, cost: 3 },
-    ],
-  },
-  {
-    id: "seed-6", name: "Bombi", type: "hada", hp: 70, rarity: "Común", emoji: "🧚",
-    desc: "Reparte polvo de estrellas a quien encuentra triste en el camino.",
-    attacks: [
-      { name: "Polvo mágico", damage: 20, cost: 1 },
-      { name: "Beso drenaje", damage: 40, cost: 2 },
-    ],
-  },
-];
+let TYPES = {};
+let WEAKNESS = {};
+let RARITY_HOLO = new Set();
+let RARITY_CLASS = {};
+let MAX_IMAGE_SIZE = 640;
+let STORAGE_KEYS = { ...DEFAULT_STORAGE_KEYS };
 
 /* ---------- Estado ---------- */
-let cards = loadCards();
+let baseCards = [];   // cartas de data/cartas.json (solo lectura)
+let userCards = [];   // cartas creadas en este navegador
+let removedIds = new Set();
+let cards = [];
 let activeType = "todos";
 let searchTerm = "";
 let detailId = null;
 let pendingImage = null; // dataURL de la imagen seleccionada en el formulario
+let dataReady = false;
 
 /* ---------- Referencias del DOM ---------- */
 const grid = document.getElementById("grid");
@@ -103,26 +47,102 @@ const detailContent = document.getElementById("detailContent");
 const deleteCardBtn = document.getElementById("deleteCardBtn");
 const toastEl = document.getElementById("toast");
 
-/* ---------- Utilidades ---------- */
-function loadCards() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return structuredClone(SEED_CARDS);
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : structuredClone(SEED_CARDS);
-  } catch {
-    return structuredClone(SEED_CARDS);
+/* ---------- Carga de datos ---------- */
+async function loadJson(url) {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`No se pudo cargar ${url} (${response.status})`);
   }
+  return response.json();
+}
+
+function applyConfig(config) {
+  TYPES = config.types || {};
+  WEAKNESS = config.weakness || {};
+  RARITY_HOLO = new Set(config.rarityHolo || []);
+  RARITY_CLASS = config.rarityClass || {};
+  MAX_IMAGE_SIZE = Number(config.maxImageSize) || 640;
+  STORAGE_KEYS = { ...DEFAULT_STORAGE_KEYS, ...(config.storage || {}) };
+}
+
+function loadLocalState() {
+  try {
+    const rawUser = localStorage.getItem(STORAGE_KEYS.userCards);
+    const rawRemoved = localStorage.getItem(STORAGE_KEYS.removedCards);
+
+    if (rawUser !== null || rawRemoved !== null) {
+      const parsedUser = JSON.parse(rawUser || "[]");
+      const parsedRemoved = JSON.parse(rawRemoved || "[]");
+      userCards = Array.isArray(parsedUser) ? parsedUser : [];
+      removedIds = new Set(Array.isArray(parsedRemoved) ? parsedRemoved : []);
+      return;
+    }
+
+    // Migración: la versión anterior guardaba todas las cartas en una sola clave.
+    const legacy = localStorage.getItem(STORAGE_KEYS.legacy);
+    if (!legacy) return;
+    const parsed = JSON.parse(legacy);
+    if (!Array.isArray(parsed)) return;
+
+    const baseIds = new Set(baseCards.map((card) => card.id));
+    userCards = parsed.filter((card) => card && !baseIds.has(card.id));
+    saveCards();
+  } catch {
+    userCards = [];
+    removedIds = new Set();
+  }
+}
+
+function rebuildCards() {
+  const visibleBase = baseCards.filter((card) => !removedIds.has(card.id));
+  cards = [...userCards, ...visibleBase];
 }
 
 function saveCards() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(cards));
+    localStorage.setItem(STORAGE_KEYS.userCards, JSON.stringify(userCards));
+    localStorage.setItem(STORAGE_KEYS.removedCards, JSON.stringify([...removedIds]));
     return true;
   } catch {
     showToast("No hay espacio para guardar esa imagen 😢");
     return false;
   }
+}
+
+function loadError(message) {
+  grid.innerHTML = "";
+  counter.textContent = "";
+  emptyState.hidden = false;
+  emptyState.querySelector("h2").textContent = "No se pudieron cargar los datos";
+  emptyState.querySelector("p").textContent = message;
+  document.getElementById("emptyNewBtn").textContent = "Reintentar";
+  document.getElementById("newCardBtn").disabled = true;
+  console.error(message);
+}
+
+async function init() {
+  try {
+    const [config, base] = await Promise.all([
+      loadJson(DATA_URLS.config),
+      loadJson(DATA_URLS.cards),
+    ]);
+
+    applyConfig(config);
+    baseCards = Array.isArray(base) ? base : [];
+    loadLocalState();
+    rebuildCards();
+    dataReady = true;
+  } catch {
+    loadError(
+      "Abre el proyecto con un servidor local (por ejemplo: npx serve .). " +
+      "El navegador no permite leer los JSON con file://."
+    );
+    return;
+  }
+
+  buildFilters();
+  buildTypeSelect();
+  render();
 }
 
 function uid() {
@@ -301,6 +321,7 @@ function getFilteredCards() {
 }
 
 function render() {
+  if (!dataReady) return;
   grid.innerHTML = "";
   const visible = getFilteredCards();
 
@@ -380,6 +401,7 @@ function openDetail(id) {
 }
 
 function openForm() {
+  if (!dataReady) return;
   cardForm.reset();
   pendingImage = null;
   const upload = cardForm.querySelector(".upload");
@@ -393,6 +415,10 @@ function openForm() {
 }
 
 function openCreateFromEmpty() {
+  if (!dataReady) {
+    window.location.reload();
+    return;
+  }
   if (cards.length > 0) {
     activeType = "todos";
     searchTerm = "";
@@ -536,9 +562,11 @@ cardForm.addEventListener("submit", (event) => {
     createdAt: new Date().toISOString(),
   };
 
-  cards.unshift(card);
+  userCards = [card, ...userCards];
+  rebuildCards();
   if (!saveCards()) {
-    cards.shift();
+    userCards = userCards.slice(1);
+    rebuildCards();
     return;
   }
 
@@ -561,7 +589,11 @@ deleteCardBtn.addEventListener("click", () => {
   if (!card) return;
   if (!window.confirm(`¿Eliminar la carta "${card.name}"?`)) return;
 
-  cards = cards.filter((item) => item.id !== detailId);
+  if (baseCards.some((item) => item.id === detailId)) {
+    removedIds.add(detailId);
+  }
+  userCards = userCards.filter((item) => item.id !== detailId);
+  rebuildCards();
   saveCards();
   closeModal(detailModal);
   render();
@@ -578,6 +610,4 @@ searchInput.addEventListener("input", () => {
 });
 
 /* ---------- Arranque ---------- */
-buildFilters();
-buildTypeSelect();
-render();
+init();

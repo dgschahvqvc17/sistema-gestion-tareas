@@ -1,0 +1,80 @@
+[
+  {
+    "id": "seed-1",
+    "name": "Chispín",
+    "type": "fuego",
+    "hp": 70,
+    "rarity": "Rara",
+    "emoji": "🦊",
+    "desc": "Su cola chisporrotea cuando está contento. Le encanta dormir al sol.",
+    "attacks": [
+      { "name": "Ascua", "damage": 20, "cost": 1 },
+      { "name": "Llamarada", "damage": 70, "cost": 3 }
+    ]
+  },
+  {
+    "id": "seed-2",
+    "name": "Aquín",
+    "type": "agua",
+    "hp": 80,
+    "rarity": "Común",
+    "emoji": "🐳",
+    "desc": "Nada en círculos para crear remolinos y jugar con las olas.",
+    "attacks": [
+      { "name": "Burbuja", "damage": 20, "cost": 1 },
+      { "name": "Marea", "damage": 60, "cost": 2 }
+    ]
+  },
+  {
+    "id": "seed-3",
+    "name": "Brotito",
+    "type": "planta",
+    "hp": 60,
+    "rarity": "Rara",
+    "emoji": "🌱",
+    "desc": "La hoja de su cabeza crece un poco cada vez que recibe cariño.",
+    "attacks": [
+      { "name": "Hoja afilada", "damage": 30, "cost": 2 },
+      { "name": "Latigazo", "damage": 50, "cost": 2 }
+    ]
+  },
+  {
+    "id": "seed-4",
+    "name": "Voltito",
+    "type": "electrico",
+    "hp": 60,
+    "rarity": "Épica",
+    "emoji": "🐭",
+    "desc": "Acumula electricidad en las mejillas. Un abrazo suyo puede dejarte peinado.",
+    "attacks": [
+      { "name": "Chispazo", "damage": 30, "cost": 1 },
+      { "name": "Trueno", "damage": 90, "cost": 3 }
+    ]
+  },
+  {
+    "id": "seed-5",
+    "name": "Lunaris",
+    "type": "psiquico",
+    "hp": 90,
+    "rarity": "Legendaria",
+    "emoji": "🌙",
+    "desc": "Se dice que puede leer los sueños de quien la observa demasiado tiempo.",
+    "attacks": [
+      { "name": "Confusión", "damage": 40, "cost": 2 },
+      { "name": "Poder psíquico", "damage": 100, "cost": 3 }
+    ]
+  },
+  {
+    "id": "seed-6",
+    "name": "Bombi",
+    "type": "hada",
+    "hp": 70,
+    "rarity": "Común",
+    "emoji": "🧚",
+    "desc": "Reparte polvo de estrellas a quien encuentra triste en el camino.",
+    "attacks": [
+      { "name": "Polvo mágico", "damage": 20, "cost": 1 },
+      { "name": "Beso drenaje", "damage": 40, "cost": 2 }
+    ]
+  }
+]
