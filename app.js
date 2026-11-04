@@ -9,9 +9,15 @@ const DATA_URLS = {
   config: "data/configuracion.json",
 };
 
+const FALLBACK_URLS = {
+  cards: "data/cartas.js",
+  config: "data/configuracion.js",
+};
+
 const DEFAULT_STORAGE_KEYS = {
   userCards: "pokecards.user.v1",
   removedCards: "pokecards.removed.v1",
+  editedCards: "pokecards.edited.v1",
   legacy: "pokecards.v1",
   favorites: "pokecards.favorites.v1",
   deck: "pokecards.deck.v1",
@@ -25,8 +31,9 @@ let MAX_IMAGE_SIZE = 640;
 let STORAGE_KEYS = { ...DEFAULT_STORAGE_KEYS };
 
 /* ---------- Estado ---------- */
-let baseCards = [];   // cartas de data/cartas.json (solo lectura)
+let baseCards = [];   // cartas de data/cartas.json
 let userCards = [];   // cartas creadas en este navegador
+let editedBase = {};  // cambios sobre cartas base, guardados en localStorage
 let removedIds = new Set();
 let favorites = new Set();
 let deckIds = new Set();
@@ -69,6 +76,40 @@ async function loadJson(url) {
   return response.json();
 }
 
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = src;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`No se pudo cargar ${src}`));
+    document.head.append(script);
+  });
+}
+
+async function loadData() {
+  try {
+    const [config, base] = await Promise.all([
+      loadJson(DATA_URLS.config),
+      loadJson(DATA_URLS.cards),
+    ]);
+    return { config, base };
+  } catch (error) {
+    // Con file:// el navegador bloquea fetch de JSON: usamos los respaldos .js.
+    if (location.protocol !== "file:") throw error;
+
+    await Promise.all([
+      loadScript(FALLBACK_URLS.config),
+      loadScript(FALLBACK_URLS.cards),
+    ]);
+
+    const fallback = window.POKECARDS_FALLBACK;
+    if (!fallback || !fallback.config || !fallback.cards) {
+      throw new Error("No se encontraron los respaldos data/*.js");
+    }
+    return { config: fallback.config, base: fallback.cards };
+  }
+}
+
 function applyConfig(config) {
   TYPES = config.types || {};
   WEAKNESS = config.weakness || {};
@@ -82,8 +123,15 @@ function loadLocalState() {
   try {
     const rawUser = localStorage.getItem(STORAGE_KEYS.userCards);
     const rawRemoved = localStorage.getItem(STORAGE_KEYS.removedCards);
+    const rawEdited = localStorage.getItem(STORAGE_KEYS.editedCards);
     const rawFavorites = localStorage.getItem(STORAGE_KEYS.favorites);
     const rawDeck = localStorage.getItem(STORAGE_KEYS.deck);
+
+    const parsedEdited = JSON.parse(rawEdited || "{}");
+    editedBase =
+      parsedEdited && typeof parsedEdited === "object" && !Array.isArray(parsedEdited)
+        ? parsedEdited
+        : {};
 
     if (rawUser !== null || rawRemoved !== null) {
       const parsedUser = JSON.parse(rawUser || "[]");
@@ -109,6 +157,7 @@ function loadLocalState() {
     }
   } catch {
     userCards = [];
+    editedBase = {};
     removedIds = new Set();
     favorites = new Set();
     deckIds = new Set();
@@ -116,7 +165,12 @@ function loadLocalState() {
 }
 
 function rebuildCards() {
-  const visibleBase = baseCards.filter((card) => !removedIds.has(card.id));
+  const visibleBase = baseCards
+    .filter((card) => !removedIds.has(card.id))
+    .map((card) => {
+      const override = editedBase[card.id];
+      return override ? { ...card, ...override, id: card.id } : card;
+    });
   cards = [...userCards, ...visibleBase];
 }
 
@@ -124,6 +178,7 @@ function saveCards() {
   try {
     localStorage.setItem(STORAGE_KEYS.userCards, JSON.stringify(userCards));
     localStorage.setItem(STORAGE_KEYS.removedCards, JSON.stringify([...removedIds]));
+    localStorage.setItem(STORAGE_KEYS.editedCards, JSON.stringify(editedBase));
     localStorage.setItem(STORAGE_KEYS.favorites, JSON.stringify([...favorites]));
     localStorage.setItem(STORAGE_KEYS.deck, JSON.stringify([...deckIds]));
     return true;
@@ -146,20 +201,17 @@ function loadError(message) {
 
 async function init() {
   try {
-    const [config, base] = await Promise.all([
-      loadJson(DATA_URLS.config),
-      loadJson(DATA_URLS.cards),
-    ]);
+    const data = await loadData();
 
-    applyConfig(config);
-    baseCards = Array.isArray(base) ? base : [];
+    applyConfig(data.config);
+    baseCards = Array.isArray(data.base) ? data.base : [];
     loadLocalState();
     rebuildCards();
     dataReady = true;
   } catch {
     loadError(
-      "Abre el proyecto con un servidor local (por ejemplo: npx serve .). " +
-      "El navegador no permite leer los JSON con file://."
+      "No se encontraron los datos. Revisa que existan data/cartas.json, " +
+      "data/configuracion.json y sus respaldos data/cartas.js y data/configuracion.js."
     );
     return;
   }
@@ -782,18 +834,36 @@ cardForm.addEventListener("submit", (event) => {
     attacks,
   };
 
-  if (editingId) {
-    const targetIndex = userCards.findIndex((item) => item.id === editingId);
-    if (targetIndex === -1) {
-      showToast("No puedes editar una carta base");
-      return;
-    }
+  const previousUserCards = userCards;
+  const previousEditedBase = editedBase;
+  const wasEditing = Boolean(editingId);
 
-    userCards[targetIndex] = {
-      ...userCards[targetIndex],
-      ...payload,
-      id: editingId,
-    };
+  if (editingId) {
+    const baseCard = baseCards.find((item) => item.id === editingId);
+
+    if (baseCard) {
+      editedBase = {
+        ...editedBase,
+        [editingId]: {
+          ...payload,
+          id: editingId,
+          createdAt: baseCard.createdAt || null,
+          updatedAt: new Date().toISOString(),
+        },
+      };
+    } else {
+      const targetIndex = userCards.findIndex((item) => item.id === editingId);
+      if (targetIndex === -1) {
+        showToast("No se encontró la carta que quieres editar");
+        return;
+      }
+
+      userCards = userCards.map((item, index) =>
+        index === targetIndex
+          ? { ...item, ...payload, id: editingId, updatedAt: new Date().toISOString() }
+          : item
+      );
+    }
   } else {
     userCards = [{
       id: uid(),
@@ -804,19 +874,12 @@ cardForm.addEventListener("submit", (event) => {
 
   rebuildCards();
   if (!saveCards()) {
-    if (editingId) {
-      const targetIndex = userCards.findIndex((item) => item.id === editingId);
-      if (targetIndex !== -1) {
-        userCards[targetIndex] = { ...userCards[targetIndex], ...payload };
-      }
-    } else {
-      userCards = userCards.slice(1);
-    }
+    userCards = previousUserCards;
+    editedBase = previousEditedBase;
     rebuildCards();
     return;
   }
 
-  const wasEditing = Boolean(editingId);
   closeModal(formModal);
   editingId = null;
   activeType = "todos";
@@ -828,18 +891,14 @@ cardForm.addEventListener("submit", (event) => {
     c.setAttribute("aria-pressed", String(active));
   });
   render();
-  showToast(wasEditing ? "Carta actualizada" : `¡${name} se unió a tu colección! 🎉`);
+  showToast(wasEditing ? `¡${name} se actualizó! ✨` : `¡${name} se unió a tu colección! 🎉`);
 });
 
-/* ---------- Eliminar ---------- */
+/* ---------- Editar y eliminar ---------- */
 editCardBtn.addEventListener("click", () => {
   if (!detailId) return;
   const card = cards.find((item) => item.id === detailId);
   if (!card) return;
-  if (baseCards.some((item) => item.id === detailId) && !userCards.some((item) => item.id === detailId)) {
-    showToast("Solo puedes editar cartas creadas por ti");
-    return;
-  }
   closeModal(detailModal);
   openForm(detailId);
 });
@@ -851,6 +910,7 @@ deleteCardBtn.addEventListener("click", () => {
 
   if (baseCards.some((item) => item.id === detailId)) {
     removedIds.add(detailId);
+    delete editedBase[detailId];
   }
   userCards = userCards.filter((item) => item.id !== detailId);
   rebuildCards();
@@ -861,7 +921,7 @@ deleteCardBtn.addEventListener("click", () => {
 });
 
 /* ---------- Eventos generales ---------- */
-document.getElementById("newCardBtn").addEventListener("click", openForm);
+document.getElementById("newCardBtn").addEventListener("click", () => openForm());
 document.getElementById("emptyNewBtn").addEventListener("click", openCreateFromEmpty);
 
 searchInput.addEventListener("input", () => {

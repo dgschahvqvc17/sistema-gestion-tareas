@@ -3,6 +3,7 @@
   "storage": {
     "userCards": "pokecards.user.v1",
     "removedCards": "pokecards.removed.v1",
+    "editedCards": "pokecards.edited.v1",
     "legacy": "pokecards.v1"
   },
   "rarityHolo": ["Épica", "Legendaria"],
