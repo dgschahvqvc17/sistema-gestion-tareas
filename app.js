@@ -9,9 +9,15 @@ const DATA_URLS = {
   config: "data/configuracion.json",
 };
 
+const FALLBACK_URLS = {
+  cards: "data/cartas.js",
+  config: "data/configuracion.js",
+};
+
 const DEFAULT_STORAGE_KEYS = {
   userCards: "pokecards.user.v1",
   removedCards: "pokecards.removed.v1",
+  editedCards: "pokecards.edited.v1",
   legacy: "pokecards.v1",
 };
 
@@ -23,14 +29,18 @@ let MAX_IMAGE_SIZE = 640;
 let STORAGE_KEYS = { ...DEFAULT_STORAGE_KEYS };
 
 /* ---------- Estado ---------- */
-let baseCards = [];   // cartas de data/cartas.json (solo lectura)
+let baseCards = [];   // cartas de data/cartas.json
 let userCards = [];   // cartas creadas en este navegador
+let editedBase = {};  // cambios sobre cartas base, guardados en localStorage
 let removedIds = new Set();
 let cards = [];
 let activeType = "todos";
 let searchTerm = "";
 let detailId = null;
 let pendingImage = null; // dataURL de la imagen seleccionada en el formulario
+let editingId = null;    // id de la carta que se está editando
+let editImage = "";      // imagen actual de la carta en edición
+let editImageUrl = "";   // URL actual de la carta en edición (si aplica)
 let dataReady = false;
 
 /* ---------- Referencias del DOM ---------- */
@@ -56,6 +66,40 @@ async function loadJson(url) {
   return response.json();
 }
 
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = src;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`No se pudo cargar ${src}`));
+    document.head.append(script);
+  });
+}
+
+async function loadData() {
+  try {
+    const [config, base] = await Promise.all([
+      loadJson(DATA_URLS.config),
+      loadJson(DATA_URLS.cards),
+    ]);
+    return { config, base };
+  } catch (error) {
+    // Con file:// el navegador bloquea fetch de JSON: usamos los respaldos .js.
+    if (location.protocol !== "file:") throw error;
+
+    await Promise.all([
+      loadScript(FALLBACK_URLS.config),
+      loadScript(FALLBACK_URLS.cards),
+    ]);
+
+    const fallback = window.POKECARDS_FALLBACK;
+    if (!fallback || !fallback.config || !fallback.cards) {
+      throw new Error("No se encontraron los respaldos data/*.js");
+    }
+    return { config: fallback.config, base: fallback.cards };
+  }
+}
+
 function applyConfig(config) {
   TYPES = config.types || {};
   WEAKNESS = config.weakness || {};
@@ -69,6 +113,13 @@ function loadLocalState() {
   try {
     const rawUser = localStorage.getItem(STORAGE_KEYS.userCards);
     const rawRemoved = localStorage.getItem(STORAGE_KEYS.removedCards);
+    const rawEdited = localStorage.getItem(STORAGE_KEYS.editedCards);
+
+    const parsedEdited = JSON.parse(rawEdited || "{}");
+    editedBase =
+      parsedEdited && typeof parsedEdited === "object" && !Array.isArray(parsedEdited)
+        ? parsedEdited
+        : {};
 
     if (rawUser !== null || rawRemoved !== null) {
       const parsedUser = JSON.parse(rawUser || "[]");
@@ -89,12 +140,18 @@ function loadLocalState() {
     saveCards();
   } catch {
     userCards = [];
+    editedBase = {};
     removedIds = new Set();
   }
 }
 
 function rebuildCards() {
-  const visibleBase = baseCards.filter((card) => !removedIds.has(card.id));
+  const visibleBase = baseCards
+    .filter((card) => !removedIds.has(card.id))
+    .map((card) => {
+      const override = editedBase[card.id];
+      return override ? { ...card, ...override, id: card.id } : card;
+    });
   cards = [...userCards, ...visibleBase];
 }
 
@@ -102,6 +159,7 @@ function saveCards() {
   try {
     localStorage.setItem(STORAGE_KEYS.userCards, JSON.stringify(userCards));
     localStorage.setItem(STORAGE_KEYS.removedCards, JSON.stringify([...removedIds]));
+    localStorage.setItem(STORAGE_KEYS.editedCards, JSON.stringify(editedBase));
     return true;
   } catch {
     showToast("No hay espacio para guardar esa imagen 😢");
@@ -122,20 +180,17 @@ function loadError(message) {
 
 async function init() {
   try {
-    const [config, base] = await Promise.all([
-      loadJson(DATA_URLS.config),
-      loadJson(DATA_URLS.cards),
-    ]);
+    const data = await loadData();
 
-    applyConfig(config);
-    baseCards = Array.isArray(base) ? base : [];
+    applyConfig(data.config);
+    baseCards = Array.isArray(data.base) ? data.base : [];
     loadLocalState();
     rebuildCards();
     dataReady = true;
   } catch {
     loadError(
-      "Abre el proyecto con un servidor local (por ejemplo: npx serve .). " +
-      "El navegador no permite leer los JSON con file://."
+      "No se encontraron los datos. Revisa que existan data/cartas.json, " +
+      "data/configuracion.json y sus respaldos data/cartas.js y data/configuracion.js."
     );
     return;
   }
@@ -337,18 +392,60 @@ function openDetail(id) {
   openModal(detailModal);
 }
 
-function openForm() {
+function openForm(card = null) {
   if (!dataReady) return;
+
   cardForm.reset();
   pendingImage = null;
+  editingId = card ? card.id : null;
+  editImage = card ? card.image || "" : "";
+  editImageUrl = card && /^https?:\/\//i.test(editImage) ? editImage : "";
+
   const upload = cardForm.querySelector(".upload");
+  const uploadLabel = upload.querySelector(".upload__label");
   upload.classList.remove("is-filled");
-  upload.querySelector(".upload__label").textContent = "📁 Subir imagen desde tu equipo";
-  cardForm.querySelector('[name="hp"]').value = 60;
-  cardForm.querySelector('[name="type"]').value = "fuego";
-  cardForm.querySelector('[name="emoji"]').placeholder = TYPES.fuego.emoji;
+  uploadLabel.textContent = "📁 Subir imagen desde tu equipo";
+  if (editImage && !editImageUrl) {
+    upload.classList.add("is-filled");
+    uploadLabel.textContent = "✅ Imagen actual (sube otra para cambiarla)";
+  }
+
+  document.getElementById("formTitle").textContent = card ? "Editar carta" : "Nueva carta";
+  document.querySelector("#formModal .modal__subtitle").textContent = card
+    ? `Ajusta los datos de ${card.name}.`
+    : "Dale vida a tu criatura. Solo necesitas un nombre.";
+  cardForm.querySelector('button[type="submit"]').textContent = card
+    ? "Guardar cambios"
+    : "Guardar carta";
+
+  cardForm.querySelector('[name="name"]').value = card ? card.name : "";
+  typeSelect.value = card ? card.type : "fuego";
+  cardForm.querySelector('[name="hp"]').value = card ? card.hp : 60;
+  cardForm.querySelector('[name="rarity"]').value = card ? card.rarity : "Rara";
+  cardForm.querySelector('[name="emoji"]').value = card ? card.emoji || "" : "";
+  cardForm.querySelector('[name="emoji"]').placeholder = typeInfo(typeSelect.value).emoji;
+  cardForm.querySelector('[name="imageUrl"]').value = editImageUrl;
+  cardForm.querySelector('[name="desc"]').value = card ? card.desc || "" : "";
+
+  [1, 2].forEach((index) => {
+    const attack = card && card.attacks ? card.attacks[index - 1] : null;
+    cardForm.querySelector(`[name="atk${index}Name"]`).value = attack ? attack.name : "";
+    cardForm.querySelector(`[name="atk${index}Damage"]`).value =
+      attack && attack.damage ? attack.damage : "";
+    cardForm.querySelector(`[name="atk${index}Cost"]`).value = attack
+      ? String(Math.min(3, Math.max(1, Number(attack.cost) || 1)))
+      : index === 1 ? "2" : "3";
+  });
+
   openModal(formModal);
   setTimeout(() => cardForm.querySelector('[name="name"]').focus(), 60);
+}
+
+function openEdit() {
+  const card = cards.find((item) => item.id === detailId);
+  if (!card) return;
+  closeModal(detailModal);
+  openForm(card);
 }
 
 function openCreateFromEmpty() {
@@ -472,6 +569,7 @@ cardForm.addEventListener("submit", (event) => {
   const type = String(data.get("type") || "normal");
   const hp = Math.min(300, Math.max(10, Number(data.get("hp")) || 60));
   const imageUrl = String(data.get("imageUrl") || "").trim();
+  const image = pendingImage || imageUrl || (editingId && !editImageUrl ? editImage : "");
 
   const attacks = [
     {
@@ -486,28 +584,70 @@ cardForm.addEventListener("submit", (event) => {
     },
   ].filter((attack) => attack.name);
 
-  const card = {
-    id: uid(),
+  const cardData = {
     name,
     type,
     hp,
     rarity: String(data.get("rarity") || "Rara"),
     emoji: String(data.get("emoji") || "").trim() || typeInfo(type).emoji,
-    image: pendingImage || imageUrl || "",
+    image,
     desc: String(data.get("desc") || "").trim(),
     attacks,
-    createdAt: new Date().toISOString(),
   };
 
-  userCards = [card, ...userCards];
+  const previousUserCards = userCards;
+  const previousEditedBase = editedBase;
+  let wasEditing = false;
+
+  if (editingId) {
+    wasEditing = true;
+    const baseCard = baseCards.find((item) => item.id === editingId);
+
+    if (baseCard) {
+      editedBase = {
+        ...editedBase,
+        [editingId]: {
+          ...cardData,
+          id: editingId,
+          createdAt: baseCard.createdAt || null,
+          updatedAt: new Date().toISOString(),
+        },
+      };
+    } else {
+      userCards = userCards.map((item) =>
+        item.id === editingId
+          ? {
+              ...item,
+              ...cardData,
+              id: editingId,
+              updatedAt: new Date().toISOString(),
+            }
+          : item
+      );
+    }
+  } else {
+    userCards = [
+      {
+        ...cardData,
+        id: uid(),
+        createdAt: new Date().toISOString(),
+      },
+      ...userCards,
+    ];
+  }
+
   rebuildCards();
   if (!saveCards()) {
-    userCards = userCards.slice(1);
+    userCards = previousUserCards;
+    editedBase = previousEditedBase;
     rebuildCards();
     return;
   }
 
   closeModal(formModal);
+  editingId = null;
+  editImage = "";
+  editImageUrl = "";
   activeType = "todos";
   searchTerm = "";
   searchInput.value = "";
@@ -517,7 +657,9 @@ cardForm.addEventListener("submit", (event) => {
     c.setAttribute("aria-pressed", String(active));
   });
   render();
-  showToast(`¡${name} se unió a tu colección! 🎉`);
+  showToast(
+    wasEditing ? `¡${name} se actualizó! ✨` : `¡${name} se unió a tu colección! 🎉`
+  );
 });
 
 /* ---------- Eliminar ---------- */
@@ -528,6 +670,7 @@ deleteCardBtn.addEventListener("click", () => {
 
   if (baseCards.some((item) => item.id === detailId)) {
     removedIds.add(detailId);
+    delete editedBase[detailId];
   }
   userCards = userCards.filter((item) => item.id !== detailId);
   rebuildCards();
@@ -538,7 +681,8 @@ deleteCardBtn.addEventListener("click", () => {
 });
 
 /* ---------- Eventos generales ---------- */
-document.getElementById("newCardBtn").addEventListener("click", openForm);
+document.getElementById("newCardBtn").addEventListener("click", () => openForm());
+document.getElementById("editCardBtn").addEventListener("click", openEdit);
 document.getElementById("emptyNewBtn").addEventListener("click", openCreateFromEmpty);
 
 searchInput.addEventListener("input", () => {
