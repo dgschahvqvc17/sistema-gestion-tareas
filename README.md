@@ -5,7 +5,8 @@ Mini aplicación web para **crear y visualizar cartas coleccionables** estilo Po
 ![HTML](https://img.shields.io/badge/HTML-5-e34f26?logo=html5&logoColor=white)
 ![CSS](https://img.shields.io/badge/CSS-3-1572b6?logo=css3&logoColor=white)
 ![JavaScript](https://img.shields.io/badge/JavaScript-vanilla-f7df1e?logo=javascript&logoColor=black)
-![Deploy]Deployado en Netlify: [Netlyfy](https://pokecardsupds.netlify.app/)
+
+Deployado en Netlify: [Netlyfy](https://pokecardsupds.netlify.app/)
 
 ## ✨ Funcionalidades
 
