@@ -13,6 +13,8 @@ const DEFAULT_STORAGE_KEYS = {
   userCards: "pokecards.user.v1",
   removedCards: "pokecards.removed.v1",
   legacy: "pokecards.v1",
+  favorites: "pokecards.favorites.v1",
+  deck: "pokecards.deck.v1",
 };
 
 let TYPES = {};
@@ -26,10 +28,14 @@ let STORAGE_KEYS = { ...DEFAULT_STORAGE_KEYS };
 let baseCards = [];   // cartas de data/cartas.json (solo lectura)
 let userCards = [];   // cartas creadas en este navegador
 let removedIds = new Set();
+let favorites = new Set();
+let deckIds = new Set();
+let compareIds = [];
 let cards = [];
 let activeType = "todos";
 let searchTerm = "";
 let detailId = null;
+let editingId = null;
 let pendingImage = null; // dataURL de la imagen seleccionada en el formulario
 let dataReady = false;
 
@@ -45,7 +51,14 @@ const cardForm = document.getElementById("cardForm");
 const typeSelect = document.getElementById("typeSelect");
 const detailContent = document.getElementById("detailContent");
 const deleteCardBtn = document.getElementById("deleteCardBtn");
+const editCardBtn = document.getElementById("editCardBtn");
 const toastEl = document.getElementById("toast");
+const favoritesOnlyToggle = document.getElementById("favoritesOnlyToggle");
+const collectionStats = document.getElementById("collectionStats");
+const compareList = document.getElementById("compareList");
+const deckList = document.getElementById("deckList");
+const deckCount = document.getElementById("deckCount");
+const deckTotalHp = document.getElementById("deckTotalHp");
 
 /* ---------- Carga de datos ---------- */
 async function loadJson(url) {
@@ -69,27 +82,36 @@ function loadLocalState() {
   try {
     const rawUser = localStorage.getItem(STORAGE_KEYS.userCards);
     const rawRemoved = localStorage.getItem(STORAGE_KEYS.removedCards);
+    const rawFavorites = localStorage.getItem(STORAGE_KEYS.favorites);
+    const rawDeck = localStorage.getItem(STORAGE_KEYS.deck);
 
     if (rawUser !== null || rawRemoved !== null) {
       const parsedUser = JSON.parse(rawUser || "[]");
       const parsedRemoved = JSON.parse(rawRemoved || "[]");
       userCards = Array.isArray(parsedUser) ? parsedUser : [];
       removedIds = new Set(Array.isArray(parsedRemoved) ? parsedRemoved : []);
-      return;
     }
 
-    // Migración: la versión anterior guardaba todas las cartas en una sola clave.
-    const legacy = localStorage.getItem(STORAGE_KEYS.legacy);
-    if (!legacy) return;
-    const parsed = JSON.parse(legacy);
-    if (!Array.isArray(parsed)) return;
+    favorites = new Set(Array.isArray(JSON.parse(rawFavorites || "[]")) ? JSON.parse(rawFavorites || "[]") : []);
+    deckIds = new Set(Array.isArray(JSON.parse(rawDeck || "[]")) ? JSON.parse(rawDeck || "[]") : []);
 
-    const baseIds = new Set(baseCards.map((card) => card.id));
-    userCards = parsed.filter((card) => card && !baseIds.has(card.id));
-    saveCards();
+    if ((rawUser === null && rawRemoved === null) || (!rawUser && !rawRemoved)) {
+      // Migración: la versión anterior guardaba todas las cartas en una sola clave.
+      const legacy = localStorage.getItem(STORAGE_KEYS.legacy);
+      if (legacy) {
+        const parsed = JSON.parse(legacy);
+        if (Array.isArray(parsed)) {
+          const baseIds = new Set(baseCards.map((card) => card.id));
+          userCards = parsed.filter((card) => card && !baseIds.has(card.id));
+          saveCards();
+        }
+      }
+    }
   } catch {
     userCards = [];
     removedIds = new Set();
+    favorites = new Set();
+    deckIds = new Set();
   }
 }
 
@@ -102,6 +124,8 @@ function saveCards() {
   try {
     localStorage.setItem(STORAGE_KEYS.userCards, JSON.stringify(userCards));
     localStorage.setItem(STORAGE_KEYS.removedCards, JSON.stringify([...removedIds]));
+    localStorage.setItem(STORAGE_KEYS.favorites, JSON.stringify([...favorites]));
+    localStorage.setItem(STORAGE_KEYS.deck, JSON.stringify([...deckIds]));
     return true;
   } catch {
     showToast("No hay espacio para guardar esa imagen 😢");
@@ -169,6 +193,16 @@ function showToast(message) {
 }
 
 /* ---------- Render de cartas ---------- */
+function createActionButton(label, activeText, inactiveText) {
+  const button = el("button", "card__action");
+  button.type = "button";
+  button.textContent = label;
+  button.dataset.active = String(activeText === label);
+  if (label === activeText) button.classList.add("is-active");
+  if (label === inactiveText && activeText !== inactiveText) button.classList.add("is-muted");
+  return button;
+}
+
 function buildCardBack() {
   const back = el("div", "card__face card__face--back");
   const swirl = el("div", "card__back-swirl");
@@ -187,6 +221,7 @@ function buildCardBack() {
   oval.append(topText, ball, bottomText);
   back.append(swirl, oval);
   return back;
+}
 }
 
 function buildCard(card, { detail = false } = {}) {
@@ -249,7 +284,6 @@ function buildCard(card, { detail = false } = {}) {
     });
   }
 
-  // Cabecera
   const top = el("div", "card__top");
   const topLeft = el("div");
   topLeft.append(
@@ -260,7 +294,6 @@ function buildCard(card, { detail = false } = {}) {
   hp.append(el("span", "", "PS"), document.createTextNode(String(card.hp)));
   top.append(topLeft, hp);
 
-  // Arte
   const art = el("div", "card__art");
   if (card.image) {
     const img = el("img");
@@ -275,10 +308,8 @@ function buildCard(card, { detail = false } = {}) {
   badge.textContent = `${type.emoji} ${type.label}`;
   art.append(badge);
 
-  // Descripción
   const desc = el("p", "card__desc", card.desc || "Una criatura misteriosa de la que aún se sabe muy poco.");
 
-  // Ataques
   const attacks = el("div", "card__attacks");
   (card.attacks || []).forEach((attack) => {
     if (!attack || !attack.name) return;
@@ -294,7 +325,6 @@ function buildCard(card, { detail = false } = {}) {
     attacks.append(row);
   });
 
-  // Pie
   const weaknessKey = WEAKNESS[card.type] || "normal";
   const footer = el("div", "card__footer");
   footer.append(
@@ -302,7 +332,38 @@ function buildCard(card, { detail = false } = {}) {
     el("span", `rarity ${RARITY_CLASS[card.rarity] || "rare-common"}`, `★ ${card.rarity || "Común"}`)
   );
 
-  front.append(top, art, desc, attacks, footer);
+  if (!detail) {
+    const controls = el("div", "card__controls");
+    const favoriteButton = el("button", "card__mini-btn", favorites.has(card.id) ? "★ Favorita" : "☆ Favorita");
+    favoriteButton.type = "button";
+    favoriteButton.classList.toggle("is-active", favorites.has(card.id));
+    favoriteButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleFavorite(card.id);
+    });
+
+    const compareButton = el("button", "card__mini-btn", compareIds.includes(card.id) ? "✓ Comparar" : "↔ Comparar");
+    compareButton.type = "button";
+    compareButton.classList.toggle("is-active", compareIds.includes(card.id));
+    compareButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleCompare(card.id);
+    });
+
+    const deckButton = el("button", "card__mini-btn", deckIds.has(card.id) ? "✓ Mazo" : "+ Mazo");
+    deckButton.type = "button";
+    deckButton.classList.toggle("is-active", deckIds.has(card.id));
+    deckButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleDeck(card.id);
+    });
+
+    controls.append(favoriteButton, compareButton, deckButton);
+    front.append(top, art, desc, attacks, footer, controls);
+  } else {
+    front.append(top, art, desc, attacks, footer);
+  }
+
   flipper.append(front, buildCardBack());
   article.append(flipper);
   return article;
@@ -310,14 +371,101 @@ function buildCard(card, { detail = false } = {}) {
 
 function getFilteredCards() {
   const term = searchTerm.trim().toLowerCase();
+  const favoritesOnly = favoritesOnlyToggle && favoritesOnlyToggle.checked;
+
   return cards.filter((card) => {
     const matchesType = activeType === "todos" || card.type === activeType;
     const matchesTerm =
       !term ||
       card.name.toLowerCase().includes(term) ||
       (card.desc || "").toLowerCase().includes(term);
-    return matchesType && matchesTerm;
+    const matchesFavorites = !favoritesOnly || favorites.has(card.id);
+    return matchesType && matchesTerm && matchesFavorites;
   });
+}
+
+function renderCollectionStats() {
+  if (!collectionStats) return;
+
+  const total = cards.length;
+  const favoriteCount = favorites.size;
+  const deckCountValue = deckIds.size;
+  const deckTotal = [...deckIds].reduce((sum, id) => {
+    const card = cards.find((item) => item.id === id);
+    return sum + (card ? Number(card.hp) || 0 : 0);
+  }, 0);
+
+  const allTypes = cards.reduce((map, card) => {
+    map[card.type] = (map[card.type] || 0) + 1;
+    return map;
+  }, {});
+
+  const topType = Object.entries(allTypes).sort((a, b) => b[1] - a[1])[0];
+  const topTypeLabel = topType ? `${typeInfo(topType[0]).emoji} ${typeInfo(topType[0]).label}` : "-";
+
+  const stats = [
+    { label: "Total", value: total },
+    { label: "Favoritas", value: favoriteCount },
+    { label: "Tipo dominante", value: topTypeLabel },
+    { label: "Mazo", value: `${deckCountValue} cartas` },
+    { label: "PS total", value: deckTotal },
+  ];
+
+  collectionStats.innerHTML = stats.map((stat) => `
+    <div class="stat-card">
+      <span>${stat.label}</span>
+      <strong>${stat.value}</strong>
+    </div>
+  `).join("");
+}
+
+function renderComparePanel() {
+  if (!compareList) return;
+
+  const selectedCards = cards.filter((card) => compareIds.includes(card.id));
+  if (selectedCards.length === 0) {
+    compareList.innerHTML = '<p class="panel-empty">Selecciona dos cartas para comparar.</p>';
+    return;
+  }
+
+  compareList.innerHTML = selectedCards.map((card) => `
+    <div class="compare-item">
+      <div>
+        <strong>${card.name}</strong>
+        <span>${typeInfo(card.type).label}</span>
+      </div>
+      <button type="button" class="text-btn" data-compare-remove="${card.id}">Quitar</button>
+    </div>
+  `).join("");
+
+  compareList.querySelectorAll("[data-compare-remove]").forEach((button) => {
+    button.addEventListener("click", () => toggleCompare(button.dataset.compareRemove));
+  });
+}
+
+function renderDeckPanel() {
+  if (!deckList || !deckCount || !deckTotalHp) return;
+
+  const deckCards = cards.filter((card) => deckIds.has(card.id));
+  const totalHp = deckCards.reduce((sum, card) => sum + (Number(card.hp) || 0), 0);
+  deckCount.textContent = String(deckCards.length);
+  deckTotalHp.textContent = String(totalHp);
+
+  if (deckCards.length === 0) {
+    deckList.innerHTML = '<p class="panel-empty">Añade cartas a tu mazo.</p>';
+    return;
+  }
+
+  deckList.innerHTML = deckCards.slice(0, 6).map((card) => `
+    <div class="mini-item">
+      <span>${card.name}</span>
+      <small>${card.hp} PS</small>
+    </div>
+  `).join("");
+
+  if (deckCards.length > 6) {
+    deckList.insertAdjacentHTML("beforeend", `<div class="mini-item more">+${deckCards.length - 6} más</div>`);
+  }
 }
 
 function render() {
@@ -343,6 +491,10 @@ function render() {
     emptyState.querySelector("p").textContent = "Crea tu primera carta y empieza a armar tu colección.";
     document.getElementById("emptyNewBtn").textContent = "Crear carta";
   }
+
+  renderCollectionStats();
+  renderComparePanel();
+  renderDeckPanel();
 }
 
 /* ---------- Filtros ---------- */
@@ -389,6 +541,44 @@ function closeModal(modal) {
   document.body.style.overflow = "";
 }
 
+function toggleFavorite(id) {
+  if (favorites.has(id)) {
+    favorites.delete(id);
+    showToast("Carta quitada de favoritos");
+  } else {
+    favorites.add(id);
+    showToast("Carta añadida a favoritos");
+  }
+  saveCards();
+  render();
+}
+
+function toggleCompare(id) {
+  if (compareIds.includes(id)) {
+    compareIds = compareIds.filter((currentId) => currentId !== id);
+    showToast("Comparación actualizada");
+  } else {
+    if (compareIds.length >= 2) {
+      compareIds.shift();
+    }
+    compareIds.push(id);
+    showToast("Carta añadida a la comparación");
+  }
+  render();
+}
+
+function toggleDeck(id) {
+  if (deckIds.has(id)) {
+    deckIds.delete(id);
+    showToast("Carta quitada del mazo");
+  } else {
+    deckIds.add(id);
+    showToast("Carta añadida al mazo");
+  }
+  saveCards();
+  render();
+}
+
 function openDetail(id) {
   const card = cards.find((item) => item.id === id);
   if (!card) return;
@@ -400,16 +590,49 @@ function openDetail(id) {
   openModal(detailModal);
 }
 
-function openForm() {
+function openForm(cardId = null) {
   if (!dataReady) return;
+  editingId = cardId;
   cardForm.reset();
   pendingImage = null;
   const upload = cardForm.querySelector(".upload");
   upload.classList.remove("is-filled");
   upload.querySelector(".upload__label").textContent = "📁 Subir imagen desde tu equipo";
-  cardForm.querySelector('[name="hp"]').value = 60;
-  cardForm.querySelector('[name="type"]').value = "fuego";
-  cardForm.querySelector('[name="emoji"]').placeholder = TYPES.fuego.emoji;
+  const formTitle = document.getElementById("formTitle");
+  const submitBtn = cardForm.querySelector('button[type="submit"]');
+
+  if (cardId) {
+    const card = userCards.find((item) => item.id === cardId) || cards.find((item) => item.id === cardId);
+    if (!card) return;
+
+    const imageInput = cardForm.querySelector('[name="imageUrl"]');
+    formTitle.textContent = "Editar carta";
+    submitBtn.textContent = "Guardar cambios";
+    cardForm.querySelector('[name="name"]').value = card.name || "";
+    cardForm.querySelector('[name="type"]').value = card.type || "normal";
+    cardForm.querySelector('[name="hp"]').value = card.hp || 60;
+    cardForm.querySelector('[name="rarity"]').value = card.rarity || "Rara";
+    cardForm.querySelector('[name="emoji"]').value = card.emoji || "";
+    imageInput.value = card.image || "";
+    cardForm.querySelector('[name="desc"]').value = card.desc || "";
+    const firstAttack = (card.attacks && card.attacks[0]) || {};
+    const secondAttack = (card.attacks && card.attacks[1]) || {};
+    cardForm.querySelector('[name="atk1Name"]').value = firstAttack.name || "";
+    cardForm.querySelector('[name="atk1Damage"]').value = firstAttack.damage || 0;
+    cardForm.querySelector('[name="atk1Cost"]').value = firstAttack.cost || 2;
+    cardForm.querySelector('[name="atk2Name"]').value = secondAttack.name || "";
+    cardForm.querySelector('[name="atk2Damage"]').value = secondAttack.damage || 0;
+    cardForm.querySelector('[name="atk2Cost"]').value = secondAttack.cost || 3;
+    cardForm.querySelector('[name="emoji"]').placeholder = typeInfo(card.type).emoji;
+    pendingImage = null;
+  } else {
+    formTitle.textContent = "Nueva carta";
+    submitBtn.textContent = "Guardar carta";
+    cardForm.querySelector('[name="hp"]').value = 60;
+    cardForm.querySelector('[name="type"]').value = "fuego";
+    cardForm.querySelector('[name="emoji"]').placeholder = TYPES.fuego.emoji;
+  }
+
   openModal(formModal);
   setTimeout(() => cardForm.querySelector('[name="name"]').focus(), 60);
 }
@@ -549,8 +772,7 @@ cardForm.addEventListener("submit", (event) => {
     },
   ].filter((attack) => attack.name);
 
-  const card = {
-    id: uid(),
+  const payload = {
     name,
     type,
     hp,
@@ -559,18 +781,45 @@ cardForm.addEventListener("submit", (event) => {
     image: pendingImage || imageUrl || "",
     desc: String(data.get("desc") || "").trim(),
     attacks,
-    createdAt: new Date().toISOString(),
   };
 
-  userCards = [card, ...userCards];
+  if (editingId) {
+    const targetIndex = userCards.findIndex((item) => item.id === editingId);
+    if (targetIndex === -1) {
+      showToast("No puedes editar una carta base");
+      return;
+    }
+
+    userCards[targetIndex] = {
+      ...userCards[targetIndex],
+      ...payload,
+      id: editingId,
+    };
+  } else {
+    userCards = [{
+      id: uid(),
+      ...payload,
+      createdAt: new Date().toISOString(),
+    }, ...userCards];
+  }
+
   rebuildCards();
   if (!saveCards()) {
-    userCards = userCards.slice(1);
+    if (editingId) {
+      const targetIndex = userCards.findIndex((item) => item.id === editingId);
+      if (targetIndex !== -1) {
+        userCards[targetIndex] = { ...userCards[targetIndex], ...payload };
+      }
+    } else {
+      userCards = userCards.slice(1);
+    }
     rebuildCards();
     return;
   }
 
+  const wasEditing = Boolean(editingId);
   closeModal(formModal);
+  editingId = null;
   activeType = "todos";
   searchTerm = "";
   searchInput.value = "";
@@ -580,10 +829,22 @@ cardForm.addEventListener("submit", (event) => {
     c.setAttribute("aria-pressed", String(active));
   });
   render();
-  showToast(`¡${name} se unió a tu colección! 🎉`);
+  showToast(wasEditing ? "Carta actualizada" : `¡${name} se unió a tu colección! 🎉`);
 });
 
 /* ---------- Eliminar ---------- */
+editCardBtn.addEventListener("click", () => {
+  if (!detailId) return;
+  const card = cards.find((item) => item.id === detailId);
+  if (!card) return;
+  if (baseCards.some((item) => item.id === detailId) && !userCards.some((item) => item.id === detailId)) {
+    showToast("Solo puedes editar cartas creadas por ti");
+    return;
+  }
+  closeModal(detailModal);
+  openForm(detailId);
+});
+
 deleteCardBtn.addEventListener("click", () => {
   const card = cards.find((item) => item.id === detailId);
   if (!card) return;
@@ -606,6 +867,10 @@ document.getElementById("emptyNewBtn").addEventListener("click", openCreateFromE
 
 searchInput.addEventListener("input", () => {
   searchTerm = searchInput.value;
+  render();
+});
+
+favoritesOnlyToggle.addEventListener("change", () => {
   render();
 });
 

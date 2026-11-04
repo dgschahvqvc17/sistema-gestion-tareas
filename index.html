@@ -26,6 +26,10 @@
         <span aria-hidden="true">🔍</span>
         <input id="searchInput" type="search" placeholder="Buscar carta..." autocomplete="off" />
       </label>
+      <label class="toggle-pill" for="favoritesOnlyToggle">
+        <input id="favoritesOnlyToggle" type="checkbox" />
+        <span>Solo favoritos</span>
+      </label>
       <button class="btn btn--primary" id="newCardBtn" type="button">
         <span aria-hidden="true">＋</span> Nueva carta
       </button>
@@ -35,6 +39,22 @@
   <section class="toolbar">
     <div class="chips" id="typeFilters" role="group" aria-label="Filtrar por tipo"></div>
     <p class="counter" id="counter"></p>
+  </section>
+
+  <section class="collection-panel" aria-label="Resumen de la colección">
+    <div class="collection-panel__stats" id="collectionStats"></div>
+    <div class="collection-panel__compare" id="comparePanel">
+      <h3>Comparación</h3>
+      <div id="compareList" class="mini-list"></div>
+    </div>
+    <div class="collection-panel__deck" id="deckPanel">
+      <h3>Mazo</h3>
+      <div class="deck-summary">
+        <span id="deckCount">0</span> cartas
+        <span>PS total: <strong id="deckTotalHp">0</strong></span>
+      </div>
+      <div id="deckList" class="mini-list"></div>
+    </div>
   </section>
 
   <main>
@@ -60,8 +80,11 @@
       <h2 class="sr-only" id="detailTitle">Detalle de la carta</h2>
       <div class="detail" id="detailContent"></div>
       <div class="detail__actions">
-        <button class="btn btn--ghost btn--danger" id="deleteCardBtn" type="button">Eliminar carta</button>
-        <button class="btn btn--ghost" type="button" data-close>Cerrar</button>
+        <button class="btn btn--ghost" id="editCardBtn" type="button">Editar carta</button>
+        <div class="detail__actions--right">
+          <button class="btn btn--ghost btn--danger" id="deleteCardBtn" type="button">Eliminar carta</button>
+          <button class="btn btn--ghost" type="button" data-close>Cerrar</button>
+        </div>
       </div>
     </div>
   </div>
