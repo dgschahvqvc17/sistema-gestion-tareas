@@ -1,6 +1,6 @@
 # 🃏 PokéCards
 
-Mini aplicación web para **crear y visualizar cartas coleccionables** estilo Pokémon. Sin frameworks, sin dependencias y sin build. Los datos base viven en dos archivos JSON.
+Mini aplicación web para **crear y visualizar cartas coleccionables** estilo Pokémon. HTML, CSS y JavaScript, sin build. Los datos base viven en dos archivos JSON.
 
 ![HTML](https://img.shields.io/badge/HTML-5-e34f26?logo=html5&logoColor=white)
 ![CSS](https://img.shields.io/badge/CSS-3-1572b6?logo=css3&logoColor=white)
@@ -19,17 +19,23 @@ Mini aplicación web para **crear y visualizar cartas coleccionables** estilo Po
 ## 🚀 Cómo usar
 
 1. Descarga o clona el repositorio.
-2. Sirve el proyecto con un servidor estático (necesario para leer los JSON):
+2. Instala las dependencias de desarrollo (servidor estático):
 
    ```bash
-   npx serve .
-   # o
-   python -m http.server 8080
+   npm install
    ```
 
-3. Abre en el navegador la URL que indique el servidor.
-4. Pulsa **Nueva carta**, completa los datos y guarda.
+3. Arranca el proyecto:
 
+   ```bash
+   npm run dev
+   ```
+
+4. Abre <http://localhost:5173> en tu navegador.
+5. Pulsa **Nueva carta**, completa los datos y guarda.
+
+> También puedes usar cualquier otro servidor estático, por ejemplo `python -m http.server 8080`.
+>
 > Si abres `index.html` con doble clic (`file://`), el navegador bloquea la lectura de los JSON y la app mostrará un aviso.
 
 ## 📁 Estructura

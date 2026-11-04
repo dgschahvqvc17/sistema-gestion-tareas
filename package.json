@@ -1,0 +1,14 @@
+{
+  "name": "pokecards",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mini aplicación web para crear y visualizar cartas coleccionables estilo Pokémon.",
+  "scripts": {
+    "dev": "serve -l 5173 .",
+    "start": "serve -l 5173 .",
+    "preview": "serve -l 5173 ."
+  },
+  "devDependencies": {
+    "serve": "^14.2.4"
+  }
+}

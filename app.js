@@ -222,7 +222,6 @@ function buildCardBack() {
   back.append(swirl, oval);
   return back;
 }
-}
 
 function buildCard(card, { detail = false } = {}) {
   const type = typeInfo(card.type);
