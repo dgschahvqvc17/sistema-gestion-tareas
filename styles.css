@@ -15,13 +15,26 @@
 
 * { box-sizing: border-box; }
 
-html, body { min-height: 100%; }
+html {
+  min-height: 100%;
+  background: #080c18;
+}
 
 body {
   margin: 0;
   color: var(--text);
-  background: var(--bg);
+  background: transparent;
   overflow-x: hidden;
+}
+
+#bg3d {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: -2;
+  display: block;
 }
 
 body::before {
@@ -226,30 +239,94 @@ main {
   gap: 22px;
 }
 
-/* ---------- Carta ---------- */
+/* ---------- Carta 3D y Giro ---------- */
 .card {
   --type: #8b93a7;
   --type-soft: #c9cede;
   position: relative;
   border-radius: 16px;
-  padding: 11px;
-  background:
-    linear-gradient(150deg, #fffdf7 0%, #f4eedd 55%, #e9e0c9 100%);
-  border: 3px solid var(--type);
-  box-shadow: 0 18px 38px -20px rgba(0, 0, 0, 0.85), inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+  perspective: 1200px;
+  -webkit-perspective: 1200px;
   cursor: pointer;
-  transition: transform 0.22s ease, box-shadow 0.22s ease;
-  overflow: hidden;
-  color: #1d2130;
+  background: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  padding: 0;
+  border: none;
+  box-shadow: none;
   isolation: isolate;
 }
 
-.card:hover {
-  transform: translateY(-6px) rotate(-0.5deg);
-  box-shadow: 0 30px 50px -22px rgba(0, 0, 0, 0.95);
+.card__flipper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  -webkit-transform-style: preserve-3d;
+  transition: transform 0.6s cubic-bezier(0.34, 1.25, 0.64, 1), box-shadow 0.25s ease;
+  border-radius: 16px;
 }
 
-.card::after {
+.card:hover:not(.is-turning):not(.is-flipped) .card__flipper {
+  transform: translateY(-8px) rotateX(4deg) rotateY(-4deg);
+}
+
+/* Vuelta interesante al tocar la carta */
+.card.is-turning {
+  z-index: 60;
+}
+
+.card.is-turning .card__flipper {
+  animation: cardAcrobaticSpin 0.62s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+  pointer-events: none;
+}
+
+@keyframes cardAcrobaticSpin {
+  0% {
+    transform: translateY(0) scale(1) rotateY(0deg) rotateX(0deg);
+  }
+  20% {
+    transform: translateY(-8px) scale(0.97) rotateY(-20deg) rotateX(6deg);
+  }
+  50% {
+    transform: translateY(-34px) scale(1.12) rotateY(185deg) rotateX(16deg) rotateZ(-4deg);
+    box-shadow: 0 30px 60px -10px rgba(255, 203, 71, 0.6), 0 0 35px rgba(255, 203, 71, 0.4);
+  }
+  75% {
+    transform: translateY(-10px) scale(1.04) rotateY(335deg) rotateX(-4deg) rotateZ(1deg);
+  }
+  100% {
+    transform: translateY(0) scale(1) rotateY(360deg) rotateX(0deg) rotateZ(0deg);
+  }
+}
+
+/* Estado volteado (para inspeccionar el dorso Pokémon) */
+.card.is-flipped .card__flipper {
+  transform: rotateY(180deg) translateY(-4px);
+  box-shadow: 0 28px 55px -15px rgba(0, 0, 0, 0.95);
+}
+
+.card__face {
+  border-radius: 16px;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.card__face--front {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 11px;
+  background: linear-gradient(150deg, #fffdf7 0%, #f4eedd 55%, #e9e0c9 100%);
+  border: 3px solid var(--type);
+  box-shadow: 0 18px 38px -20px rgba(0, 0, 0, 0.85), inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+  overflow: hidden;
+  color: #1d2130;
+  display: flex;
+  flex-direction: column;
+}
+
+.card__face--front::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -260,7 +337,132 @@ main {
   z-index: 3;
 }
 
-.card:hover::after { transform: translateX(120%); }
+.card:hover .card__face--front::after,
+.card.is-turning .card__face--front::after {
+  transform: translateX(120%);
+}
+
+/* Dorso de la carta Pokémon */
+.card__face--back {
+  position: absolute;
+  inset: 0;
+  transform: rotateY(180deg);
+  border-radius: 16px;
+  background: #0f1c38;
+  border: 4px solid #1c3b7a;
+  box-shadow: 0 18px 38px -20px rgba(0, 0, 0, 0.85), inset 0 0 0 2px #d4a340;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+
+.card__back-swirl {
+  position: absolute;
+  inset: -20%;
+  background:
+    radial-gradient(ellipse at 50% 50%, rgba(37, 99, 235, 0.45) 0%, rgba(15, 28, 56, 0.95) 75%),
+    conic-gradient(from 0deg, rgba(59, 130, 246, 0.15), rgba(147, 51, 234, 0.2), rgba(59, 130, 246, 0.15));
+  animation: backSwirl 15s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes backSwirl {
+  to { transform: rotate(360deg); }
+}
+
+.card__back-oval {
+  position: relative;
+  z-index: 2;
+  width: 92%;
+  height: 94%;
+  border-radius: 50% / 36%;
+  border: 2px solid #d4a340;
+  background: radial-gradient(ellipse at 50% 50%, #1e4585 0%, #0e234a 65%, #08142a 100%);
+  box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.7), 0 0 12px rgba(212, 163, 64, 0.3);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 10px;
+}
+
+.card__back-title {
+  font-family: inherit;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  font-size: 0.82rem;
+  color: #ffcb47;
+  text-shadow: 0 2px 0 #1e3a8a, 0 3px 6px rgba(0, 0, 0, 0.9);
+  text-transform: uppercase;
+}
+
+.card__back-title--bottom {
+  font-size: 0.58rem;
+  letter-spacing: 0.18em;
+  color: #93c5fd;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+.card__back-ball {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 3px solid #131722;
+  overflow: hidden;
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.5), 0 6px 14px rgba(0, 0, 0, 0.6);
+  background: #ffffff;
+}
+
+.card__back-ball-top {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 50%;
+  background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+  border-bottom: 2px solid #131722;
+}
+
+.card__back-ball-bottom {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 50%;
+  background: linear-gradient(180deg, #f8fafc 0%, #cbd5e1 100%);
+}
+
+.card__back-ball-belt {
+  position: absolute;
+  top: 50%; left: 0; right: 0;
+  height: 7px;
+  transform: translateY(-50%);
+  background: #131722;
+}
+
+.card__back-ball-btn {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 3px solid #131722;
+  box-shadow: 0 0 6px rgba(96, 165, 250, 0.8);
+}
+
+.card__back-ball-btn::after {
+  content: "";
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1.5px solid #131722;
+  box-shadow: 0 0 4px #60a5fa;
+}
 
 .card--holo { border-color: var(--type); }
 
@@ -634,17 +836,31 @@ main {
 }
 
 /* ---------- Detalle ---------- */
-.detail { display: flex; justify-content: center; padding: 10px 0 18px; }
+.detail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 0 14px;
+}
 
 .detail .card {
   width: 100%;
-  max-width: 330px;
-  cursor: default;
+  max-width: 320px;
+  cursor: pointer;
   transform: none;
 }
 
-.detail .card:hover { transform: none; box-shadow: 0 18px 38px -20px rgba(0, 0, 0, 0.85); }
-.detail .card:hover::after { transform: translateX(-120%); }
+.detail .card:hover .card__flipper { transform: none; }
+.detail .card:hover .card__face--front::after { transform: translateX(-120%); }
+
+.detail__hint {
+  margin: 10px 0 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-align: center;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
 .detail .card__name { font-size: 1.3rem; }
 .detail .card__emoji { font-size: 5.4rem; }
 .detail .card__desc { font-size: 0.8rem; -webkit-line-clamp: 3; }

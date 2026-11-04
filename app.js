@@ -149,6 +149,26 @@ function showToast(message) {
 }
 
 /* ---------- Render de cartas ---------- */
+function buildCardBack() {
+  const back = el("div", "card__face card__face--back");
+  const swirl = el("div", "card__back-swirl");
+  const oval = el("div", "card__back-oval");
+  const topText = el("span", "card__back-title card__back-title--top", "POKÉCARDS");
+
+  const ball = el("div", "card__back-ball");
+  const ballTop = el("div", "card__back-ball-top");
+  const ballBottom = el("div", "card__back-ball-bottom");
+  const ballBelt = el("div", "card__back-ball-belt");
+  const ballBtn = el("div", "card__back-ball-btn");
+  ball.append(ballTop, ballBottom, ballBelt, ballBtn);
+
+  const bottomText = el("span", "card__back-title card__back-title--bottom", "TRADING CARD GAME");
+
+  oval.append(topText, ball, bottomText);
+  back.append(swirl, oval);
+  return back;
+}
+
 function buildCard(card, { detail = false } = {}) {
   const type = typeInfo(card.type);
   const article = el("article", "card");
@@ -157,15 +177,54 @@ function buildCard(card, { detail = false } = {}) {
   article.style.setProperty("--type-soft", type.soft);
   article.dataset.id = card.id;
 
-  if (!detail) {
+  const flipper = el("div", "card__flipper");
+  const front = el("div", "card__face card__face--front");
+
+  if (detail) {
+    article.tabIndex = 0;
+    article.setAttribute("role", "button");
+    article.setAttribute("aria-label", `${card.name}. Toca para girar la carta.`);
+    const toggleFlip = () => article.classList.toggle("is-flipped");
+    article.addEventListener("click", toggleFlip);
+    article.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        toggleFlip();
+      }
+    });
+
+    // Giro 3D interactivo con el puntero en modo detalle
+    article.addEventListener("mousemove", (e) => {
+      if (article.classList.contains("is-flipped")) return;
+      const rect = article.getBoundingClientRect();
+      const x = e.clientX - rect.left - rect.width / 2;
+      const y = e.clientY - rect.top - rect.height / 2;
+      const rotX = (-y / (rect.height / 2)) * 14;
+      const rotY = (x / (rect.width / 2)) * 14;
+      flipper.style.transform = `perspective(1000px) rotateX(${rotX.toFixed(2)}deg) rotateY(${rotY.toFixed(2)}deg) scale3d(1.02, 1.02, 1.02)`;
+    });
+    article.addEventListener("mouseleave", () => {
+      if (!article.classList.contains("is-flipped")) {
+        flipper.style.transform = "";
+      }
+    });
+  } else {
     article.tabIndex = 0;
     article.setAttribute("role", "button");
     article.setAttribute("aria-label", `${card.name}, carta de tipo ${type.label}. Ver detalle`);
-    article.addEventListener("click", () => openDetail(card.id));
+    const triggerSpinAndOpen = () => {
+      if (article.classList.contains("is-turning")) return;
+      article.classList.add("is-turning");
+      setTimeout(() => {
+        article.classList.remove("is-turning");
+        openDetail(card.id);
+      }, 620);
+    };
+    article.addEventListener("click", triggerSpinAndOpen);
     article.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        openDetail(card.id);
+        triggerSpinAndOpen();
       }
     });
   }
@@ -223,7 +282,9 @@ function buildCard(card, { detail = false } = {}) {
     el("span", `rarity ${RARITY_CLASS[card.rarity] || "rare-common"}`, `★ ${card.rarity || "Común"}`)
   );
 
-  article.append(top, art, desc, attacks, footer);
+  front.append(top, art, desc, attacks, footer);
+  flipper.append(front, buildCardBack());
+  article.append(flipper);
   return article;
 }
 
@@ -312,7 +373,9 @@ function openDetail(id) {
   if (!card) return;
   detailId = id;
   detailContent.innerHTML = "";
-  detailContent.append(buildCard(card, { detail: true }));
+  const cardEl = buildCard(card, { detail: true });
+  const hintEl = el("p", "detail__hint", "🔄 Toca la carta para darle la vuelta (frente / dorso)");
+  detailContent.append(cardEl, hintEl);
   openModal(detailModal);
 }
 
